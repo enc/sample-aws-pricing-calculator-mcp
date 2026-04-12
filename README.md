@@ -7,6 +7,7 @@ API server that programmatically builds AWS pricing estimates and generates shar
 ```bash
 npm install
 npm start          # listens on :3001
+npm run build      # bundle MCP server + zip source into dist/
 ```
 
 Environment variables (all optional):
@@ -102,6 +103,31 @@ When a shareable URL is requested, the builder:
 5. Returns the shareable `calculator.aws` URL
 
 AWS recalculates the actual costs when someone opens the link.
+
+## MCP Server
+
+The project includes a [Model Context Protocol](https://modelcontextprotocol.io) server (`mcp-server.js`) that exposes the calculator functionality as MCP tools. Run it with:
+
+```bash
+node mcp-server.js
+```
+
+Or use the pre-built bundle:
+
+```bash
+node dist/mcp-server.js
+```
+
+## Build
+
+```bash
+npm run build
+```
+
+This produces two artifacts in `dist/`:
+
+- `dist/mcp-server.js` — single-file esbuild bundle (minified, CJS, Node platform)
+- `dist/aws-calculator.zip` — source archive containing `mcp-server.js`, `lib/*.js`, and `package.json`
 
 ## Caveats
 
