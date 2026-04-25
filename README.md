@@ -1,4 +1,4 @@
-# AWS Pricing Calculator MCP
+# AWS Pricing Calculator MCP Server
 
 [Model Context Protocol](https://modelcontextprotocol.io) server that programmatically builds AWS pricing estimates and generates shareable [calculator.aws](https://calculator.aws) URLs. Supports all 436+ AWS services via live service definitions from the AWS Calculator CDN.
 
@@ -9,13 +9,22 @@ npm install
 node mcp-server.js
 ```
 
-Or use the pre-built bundle:
-
-```bash
-node dist/mcp-server.js
-```
-
 The server communicates over stdio using the MCP protocol — it's designed to be used by MCP-compatible clients (e.g. Claude, Kiro), not called directly via HTTP.
+
+### MCP Client Configuration
+
+Add to your MCP client config (e.g. `~/.kiro/settings/mcp.json`):
+
+```json
+{
+  "mcpServers": {
+    "aws-calculator": {
+      "command": "node",
+      "args": ["/path/to/sample-aws-pricing-calculator-mcp/mcp-server.js"]
+    }
+  }
+}
+```
 
 ## MCP Tools
 
@@ -34,11 +43,13 @@ mcp-server.js                # Entry point — stdio MCP server
 lib/
   aws-client.js              # AWS manifest loading, service definitions, field extraction, save API
   estimate-builder.js         # Estimate builder with AWS payload generation and export
-  ec2.js                     # EC2 config transformation (agent-friendly → calculator format)
+  ec2.js                     # EC2 config transformation (agent-friendly -> calculator format)
 test/
   aws-client.test.js         # Tests for AWS client
   ec2.test.js                # Tests for EC2 transform
   estimate-builder.test.js   # Tests for estimate builder
+  integration.test.js        # Integration tests
+  validation.test.js         # Config validation tests
 ```
 
 ## Build
@@ -47,10 +58,7 @@ test/
 npm run build
 ```
 
-Produces two artifacts in `dist/`:
-
-- `dist/mcp-server.js` — single-file esbuild bundle (minified, CJS, Node platform)
-- `dist/aws-calculator.zip` — source archive containing `mcp-server.js`, `lib/*.js`, and `package.json`
+Produces `dist/mcp-server.js` — a single-file esbuild bundle (minified, CJS, Node platform).
 
 ## Tests
 
@@ -71,6 +79,13 @@ On first use, the server fetches the AWS Calculator manifest from CloudFront, wh
 ### EC2 Handling
 
 EC2 uses a custom config transform (`lib/ec2.js`) that converts agent-friendly fields (instance type, OS, pricing strategy) into the `ec2Enhancement` format the calculator expects. This includes support for On-Demand, Savings Plans, Reserved Instances, and Spot pricing.
+
+### Partition Support
+
+The server supports three AWS partitions:
+- `aws` — standard commercial regions
+- `aws-iso` — US ISO East/West
+- `aws-iso-b` — US ISOB East
 
 ### Export to calculator.aws
 
@@ -99,3 +114,11 @@ All optional:
 - Callers must use the correct AWS field IDs — discover them via `get_service_fields`.
 - Estimates live in memory and don't persist across restarts.
 - No local cost calculation — pricing is computed by AWS when viewing the shareable link.
+
+## Security
+
+See [CONTRIBUTING](CONTRIBUTING.md#security-issue-notifications) for more information.
+
+## License
+
+This library is licensed under the MIT-0 License. See the [LICENSE](LICENSE) file.

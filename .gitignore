@@ -1,10 +1,10 @@
 node_modules/
+dist/
+.kiro/
+.claude/
+.DS_Store
 ~$*
 *.docx
-.DS_Store
-.claude/
-dist/aws-calculator.zip
-dist/test-err.log
 mcp-server.log
 email.html
 docs/
