@@ -1,4 +1,6 @@
 #!/usr/bin/env node
+// Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+// SPDX-License-Identifier: MIT-0
 const { McpServer } = require('@modelcontextprotocol/sdk/server/mcp.js');
 const { StdioServerTransport } = require('@modelcontextprotocol/sdk/server/stdio.js');
 const { z } = require('zod');
@@ -76,9 +78,9 @@ const server = new McpServer({
 
 server.tool(
   'search_services',
-  'Search AWS services available in the calculator. Returns service keys and names. Use this to find the correct service key before adding it to an estimate. Supports multiple comma-separated search terms in a single call (e.g. "lambda, s3, api gateway, cloudwatch").',
+  'Search AWS services available in the calculator. Returns service keys and names. Use this to find the correct service key before adding it to an estimate. Supports multiple comma-separated search terms in a single call (e.g. "Lambda, S3, API Gateway, CloudWatch").',
   {
-    query: z.string().describe('One or more search terms, comma-separated (e.g. "lambda, s3, personalize, api gateway, cloudwatch")'),
+    query: z.string().describe('One or more search terms, comma-separated (e.g. "Lambda, S3, Amazon Personalize, API Gateway, CloudWatch")'),
     partition: z.string().optional().describe('AWS partition to search in (default: "aws"). Valid values: "aws", "aws-iso", "aws-iso-b"'),
   },
   async ({ query, partition }) => {
@@ -154,9 +156,9 @@ Field values follow these patterns based on field type:
 - fileSize: object with value and unit. The unit format is "{size}|{frequency}" where size comes from the field's validSizes (gb, tb, mb, etc.) and frequency is usually "NA". Check the field's defaultUnit from get_service_fields. Examples: {"value": "512", "unit": "mb|NA"}, {"value": "1", "unit": "tb|NA"}, {"value": "10", "unit": "gb|NA"}, {"value": "8", "unit": "gb|month"}
 - dropdown: string matching one of the option IDs from get_service_fields
 - durationInput: object with value and unit, e.g. {"value": "960", "unit": "min"}
-- pricingStrategy (EC2 only): object with model, term, and upfrontPayment keys, e.g. {"model": "computeSavings", "term": "1yr", "upfrontPayment": "None"}. Valid models: "instanceSavings" (EC2 Instance Savings Plans), "computeSavings" (Compute Savings Plans), "ondemand", "spot". For dedicated tenancy only: "reserved" (Standard RI), "convertible" (Convertible RI). Valid terms: "1yr", "3yr". Valid upfrontPayment: "None", "Partial", "All". Shorthand strings also work, e.g. "computeSavings1yrNoUpfront".
+- pricingStrategy (Amazon EC2 only): object with model, term, and upfrontPayment keys, e.g. {"model": "computeSavings", "term": "1yr", "upfrontPayment": "None"}. Valid models: "instanceSavings" (EC2 Instance Savings Plans), "computeSavings" (Compute Savings Plans), "ondemand", "spot". For dedicated tenancy only: "reserved" (Standard RI), "convertible" (Convertible RI). Valid terms: "1yr", "3yr". Valid upfrontPayment: "None", "Partial", "All". Shorthand strings also work, e.g. "computeSavings1yrNoUpfront".
 
-EC2 (ec2Enhancement) has special config fields handled automatically:
+Amazon EC2 (ec2Enhancement) has special config fields handled automatically:
 - "quantity": number of instances (e.g. "2" for 2 instances). Default: 1.
 - "instanceType": instance type (e.g. "g6.12xlarge")
 - "selectedOS": operating system. Default: "linux". Options: "linux", "windows", "rhel", "suse", etc.
@@ -165,7 +167,7 @@ EC2 (ec2Enhancement) has special config fields handled automatically:
 - "storageType": EBS volume type (e.g. "Storage General Purpose gp3 GB Mo")
 - "storageAmount": EBS storage, e.g. {"value": "30", "unit": "gb|NA"}
 - "snapshotFrequency": snapshot frequency, e.g. "0" for none
-Do NOT use get_service_fields for EC2 — these fields are handled by a custom transform.
+Do NOT use get_service_fields for Amazon EC2 — these fields are handled by a custom transform.
 
 Always include "region" in each service config. Use "description" to label what each service entry represents. IMPORTANT: descriptions and group names must NOT contain <, >, or & characters (AWS rejects them).
 
