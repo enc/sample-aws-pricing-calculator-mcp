@@ -18,7 +18,7 @@ Add to your MCP client config (e.g. `~/.kiro/settings/mcp.json`):
 ```json
 {
   "mcpServers": {
-    "aws-calculator": {
+    "aws-calculator-mcp-server": {
       "command": "node",
       "args": ["/path/to/sample-aws-pricing-calculator-mcp/mcp-server.js"]
     }
