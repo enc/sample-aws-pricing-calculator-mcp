@@ -161,7 +161,7 @@ All optional:
 - The CloudFront save/manifest APIs are undocumented and may change without notice.
 - Callers must use the correct AWS field IDs — discover them via `get_service_fields`.
 - Estimates live in memory and don't persist across restarts.
-- No local cost calculation — pricing is computed by AWS when viewing the shareable link -> Press `Update estimate`.
+- No local cost calculation — pricing is computed by AWS when viewing the shareable link -> Make sure to press `Update estimate` to reflect latest pricing.
 - Only https://calculator.aws/ supported for now
 
 ## Security
