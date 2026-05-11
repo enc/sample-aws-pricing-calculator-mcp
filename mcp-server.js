@@ -169,7 +169,7 @@ Amazon EC2 (ec2Enhancement) has special config fields handled automatically:
 - "snapshotFrequency": snapshot frequency, e.g. "0" for none
 Do NOT use get_service_fields for Amazon EC2 — these fields are handled by a custom transform.
 
-Always include "region" in each service config. Use "description" to label what each service entry represents. IMPORTANT: descriptions and group names must NOT contain <, >, or & characters (AWS rejects them).
+IMPORTANT: Before calling this tool, you MUST confirm the desired AWS region with the user if they haven't already specified one. Do NOT assume a default region. Always include "region" in each service config. Use "description" to label what each service entry represents. IMPORTANT: descriptions and group names must NOT contain <, >, or & characters (AWS rejects them).
 
 Config keys are validated against the service definition. Invalid field IDs will be rejected with suggested corrections. Use get_service_fields first to discover valid field IDs for a service.
 
