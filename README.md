@@ -50,11 +50,12 @@ Add to your MCP client config (e.g. `~/.kiro/settings/mcp.json`):
 | Tool | Description |
 |---|---|
 | `search_services` | Search AWS services by name or key. Supports comma-separated queries. |
-| `get_service_fields` | Get input field IDs, types, labels, and valid options for one or more services. |
+| `get_service_fields` | Get input field IDs, types, labels, valid options, and selector values for one or more services. |
 | `create_estimate` | Create a new empty estimate. Returns an estimate ID. |
 | `add_service` | Add one or more services to an estimate with config values. Supports batch mode. |
 | `export_estimate` | Export an estimate to calculator.aws and get a shareable URL. |
 | `import_estimate` | Download an existing estimate by URL or ID. Returns JSON (raw) or Markdown. |
+| `get_server_info` | Get version and capability information about this MCP server. |
 
 ## Project Structure
 
