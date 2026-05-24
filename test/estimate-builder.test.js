@@ -59,12 +59,33 @@ describe('EstimateBuilder', () => {
   describe('addService deduplication', () => {
     it('deduplicates same service key using description', () => {
       const eb = new EstimateBuilder('test');
-      eb.addService('aWSLambda', { description: 'API handler', region: 'us-east-1' });
-      eb.addService('aWSLambda', { description: 'Cron jobs', region: 'us-east-1' });
+      const first = eb.addService('aWSLambda', { description: 'API handler', region: 'us-east-1' });
+      const second = eb.addService('aWSLambda', { description: 'Cron jobs', region: 'us-east-1' });
       const keys = Object.keys(eb.services);
+      assert.equal(first, 'aWSLambda');
+      assert.equal(second, 'aWSLambda:Cronjobs');
       assert.equal(keys.length, 2, 'should have two entries');
       assert.ok(keys.includes('aWSLambda'), 'first entry uses original key');
       assert.ok(keys.some(k => k.includes('Cronjobs')), 'second entry has description suffix');
+    });
+
+    it('deduplicates repeated service keys without descriptions', () => {
+      const eb = new EstimateBuilder('test');
+      const first = eb.addService('aWSLambda', { region: 'us-east-1' });
+      const second = eb.addService('aWSLambda', { region: 'us-east-1' });
+      const keys = Object.keys(eb.services);
+      assert.equal(first, 'aWSLambda');
+      assert.equal(second, 'aWSLambda:2');
+      assert.deepEqual(keys, ['aWSLambda', 'aWSLambda:2']);
+    });
+
+    it('deduplicates repeated service keys with the same description', () => {
+      const eb = new EstimateBuilder('test');
+      eb.addService('aWSLambda', { description: 'API handler', region: 'us-east-1' });
+      eb.addService('aWSLambda', { description: 'API handler', region: 'us-east-1' });
+      const third = eb.addService('aWSLambda', { description: 'API handler', region: 'us-east-1' });
+      assert.equal(third, 'aWSLambda:2');
+      assert.equal(Object.keys(eb.services).length, 3);
     });
 
     it('recognizes ec2Enhancement as EC2 service', () => {

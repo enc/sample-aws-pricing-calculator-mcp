@@ -21,13 +21,14 @@ Output:
 
 ## Quick Start
 
-Requires [Node.js®](https://nodejs.org/en/download).
+Requires [Node.js®](https://nodejs.org/en/download) and pnpm. Use the pinned pnpm version from `package.json` via Corepack when possible.
 
 ```bash
 git clone https://github.com/aws-samples/sample-aws-pricing-calculator-mcp.git
 cd sample-aws-pricing-calculator-mcp
-npm install
-npm run build
+corepack enable
+pnpm install --frozen-lockfile
+pnpm build
 ```
 
 The server communicates over stdio using the MCP protocol — it's designed to be used by MCP-compatible clients (e.g. Claude, Kiro), not called directly via HTTP.
@@ -36,7 +37,7 @@ The server communicates over stdio using the MCP protocol — it's designed to b
 
 Add to your MCP client config (e.g. `~/.kiro/settings/mcp.json`):
 
-Using npm/npx (Also always fetches latest version)
+Using npm/npx (also always fetches latest version)
 ```json
     "aws-pricing-calculator-mcp-server" : {
       "command" : "npx",
@@ -58,9 +59,12 @@ From local source (after build)
 |---|---|
 | `search_services` | Search AWS services by name or key. Supports comma-separated queries. |
 | `get_service_fields` | Get input field IDs, types, labels, valid options, and selector values for one or more services. |
+| `get_service_config_schema` | Get AI-ready config schemas with value shapes, units, options, and examples. |
 | `create_estimate` | Create a new empty estimate. Returns an estimate ID. |
 | `add_service` | Add one or more services to an estimate with config values. Supports batch mode. |
+| `add_services_structured` | Add one or more services with structured MCP input instead of stringified JSON. |
 | `export_estimate` | Export an estimate to calculator.aws and get a shareable URL. |
+| `validate_estimate_cost` | Export, read back AWS-calculated totals, and validate ARR against an expected value. |
 | `import_estimate` | Download an existing estimate by URL or ID. Returns JSON (raw) or Markdown. |
 | `get_server_info` | Get version and capability information about this MCP server. |
 
@@ -83,7 +87,7 @@ test/
 ## Build
 
 ```bash
-npm run build
+pnpm build
 ```
 
 Produces `dist/mcp-server.js` — a single-file esbuild bundle (minified, CJS, Node platform).
@@ -91,7 +95,7 @@ Produces `dist/mcp-server.js` — a single-file esbuild bundle (minified, CJS, N
 ## Tests
 
 ```bash
-npm test
+pnpm test
 ```
 
 ## Architecture
@@ -154,6 +158,10 @@ When `export_estimate` is called, the builder:
 5. Returns the shareable `calculator.aws` URL
 
 AWS recalculates the actual costs when someone opens the link.
+
+### ARR validation
+
+`validate_estimate_cost` exports the estimate, reads back AWS Calculator's calculated totals, and compares `totalCost.monthly * 12` to an expected ARR. Upfront charges are returned separately and are not included in ARR.
 
 ## Environment Variables
 

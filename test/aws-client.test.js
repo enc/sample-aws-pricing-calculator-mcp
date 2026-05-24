@@ -88,7 +88,7 @@ describe('parseDoubleEncodedResponse', () => {
 });
 
 describe('extractInputFields', () => {
-  const { extractInputFields } = require('../lib/aws-client');
+  const { extractInputFields, buildServiceConfigSchema } = require('../lib/aws-client');
 
   it('extracts numericInput fields', () => {
     const def = { templates: [{ id: 'tpl', groups: [{ items: [
@@ -155,5 +155,23 @@ describe('extractInputFields', () => {
     const fields = extractInputFields(def);
     assert.equal(fields.length, 1);
     assert.equal(fields[0].id, 'actual');
+  });
+
+  it('builds an AI-ready config schema with examples', () => {
+    const def = { templates: [{ id: 'tpl', groups: [{ items: [
+      { id: 'numberOfRequests', type: 'numericInput', label: 'Requests' },
+      { id: 'storage', type: 'fileSize', label: 'Storage',
+        dropDownSize: [{ value: 'gb' }, { value: 'tb' }],
+        defaultOption: { size: 'gb', frequency: 'NA' } },
+      { id: 'storageClass', type: 'input', subType: 'dropdown', label: 'Storage class',
+        options: [{ id: 'standard', label: 'Standard' }] },
+    ]}]}]};
+    const fields = extractInputFields(def);
+    const schema = buildServiceConfigSchema({ key: 'amazonS3Standard', name: 'Amazon S3 Standard' }, fields);
+    const byId = Object.fromEntries(schema.fields.map(f => [f.id, f]));
+    assert.equal(schema.configShape.region.includes('required'), true);
+    assert.equal(byId.numberOfRequests.example, '1');
+    assert.deepEqual(byId.storage.example, { value: '100', unit: 'gb|NA' });
+    assert.equal(byId.storageClass.example, 'standard');
   });
 });

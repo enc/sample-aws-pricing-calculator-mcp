@@ -1,13 +1,13 @@
 /**
- * Integration test — hits the real AWS Calculator save API.
- * Run with: node --test test/integration.test.js
- * Skipped in normal `npm test` (not in test/*.test.js glob by default).
+ * Integration test - hits the real AWS Calculator save API.
+ * Run with: RUN_INTEGRATION=1 node --test test/integration.test.js
+ * Included in the normal glob, but skipped unless RUN_INTEGRATION=1.
  */
 const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
 const EstimateBuilder = require('../lib/estimate-builder');
 
-describe('integration: export to calculator.aws', () => {
+describe('integration: export to calculator.aws', { skip: process.env.RUN_INTEGRATION !== '1' }, () => {
   it('builds and saves a Lambda estimate, returns a working URL', async () => {
     const eb = new EstimateBuilder('Integration Test');
     eb.addService('aWSLambda', {

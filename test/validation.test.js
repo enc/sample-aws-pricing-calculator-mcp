@@ -202,3 +202,62 @@ describe('validateConfigKeys (integration)', () => {
     assert.equal(result, null, 'should not block on fetch failure');
   });
 });
+
+describe('config validation helpers', () => {
+  const { validateAgainstFields, validateEc2Config, validateServiceConfig } = require('../lib/config-validation');
+
+  it('requires region before service config validation', async () => {
+    const result = await validateServiceConfig('aWSLambda', { numberOfRequests: '1' });
+    assert.match(result, /region/);
+  });
+
+  it('rejects invalid numeric values', () => {
+    const errors = validateAgainstFields('aWSLambda', {
+      region: 'us-east-1',
+      numberOfRequests: 'many',
+    }, [
+      { id: 'numberOfRequests', type: 'numericInput', label: 'Requests' },
+    ]);
+    assert.ok(errors.some(e => e.includes('numeric')));
+  });
+
+  it('rejects invalid fileSize units', () => {
+    const errors = validateAgainstFields('amazonS3Standard', {
+      region: 'us-east-1',
+      storage: { value: '100', unit: 'parsec|NA' },
+    }, [
+      { id: 'storage', type: 'fileSize', validSizes: ['gb', 'tb'] },
+    ]);
+    assert.ok(errors.some(e => e.includes('Allowed sizes')));
+  });
+
+  it('rejects invalid dropdown options', () => {
+    const errors = validateAgainstFields('amazonS3Standard', {
+      region: 'us-east-1',
+      storageClass: 'coldest',
+    }, [
+      { id: 'storageClass', type: 'dropdown', options: [{ id: 'standard' }, { id: 'ia' }] },
+    ]);
+    assert.ok(errors.some(e => e.includes('valid option')));
+  });
+
+  it('rejects malformed columnFormIPM values', () => {
+    const errors = validateAgainstFields('amazonRDSPostgreSQLDB', {
+      region: 'us-east-1',
+      columnFormIPM: { value: { 'Number of Nodes': { value: '1' } } },
+    }, [
+      { id: 'columnFormIPM', type: 'columnFormIPM', row: [{ selectorId: 'Number of Nodes', label: 'Nodes' }] },
+    ]);
+    assert.ok(errors.some(e => e.includes('{ "value": [rowObject] }')));
+  });
+
+  it('rejects unsupported EC2 fields and non-numeric quantities', () => {
+    const errors = validateEc2Config({
+      region: 'us-east-1',
+      quantity: 'two',
+      madeUp: 'x',
+    });
+    assert.ok(errors.some(e => e.includes('quantity')));
+    assert.ok(errors.some(e => e.includes('madeUp')));
+  });
+});

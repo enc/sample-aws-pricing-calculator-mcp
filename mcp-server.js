@@ -4,99 +4,89 @@
 const { McpServer } = require('@modelcontextprotocol/sdk/server/mcp.js');
 const { StdioServerTransport } = require('@modelcontextprotocol/sdk/server/stdio.js');
 const { z } = require('zod');
-const { PARTITIONS, loadManifest, findService, fetchServiceDefinition, extractInputFields, enrichFieldsWithMetadata, searchServices, fetchEstimate, estimateToMarkdown } = require('./lib/aws-client');
+const { PARTITIONS, loadManifest, findService, fetchServiceDefinition, extractInputFields, enrichFieldsWithMetadata, buildServiceConfigSchema, searchServices, fetchEstimate, estimateToMarkdown } = require('./lib/aws-client');
+const { validateServiceConfig } = require('./lib/config-validation');
+const { validateEstimateCost, expectedServicesForVisualCheck } = require('./lib/cost-validation');
 const EstimateBuilder = require('./lib/estimate-builder');
 
 const estimates = new Map();
 
-const META_KEYS = new Set(['region', 'description']);
+const jsonValue = z.lazy(() => z.union([
+  z.string(),
+  z.number(),
+  z.boolean(),
+  z.null(),
+  z.array(jsonValue),
+  z.record(jsonValue),
+]));
 
-function levenshtein(a, b) {
-  const m = a.length, n = b.length;
-  const d = Array.from({ length: m + 1 }, (_, i) => i);
-  for (let j = 1; j <= n; j++) {
-    let prev = d[0];
-    d[0] = j;
-    for (let i = 1; i <= m; i++) {
-      const tmp = d[i];
-      d[i] = a[i - 1] === b[j - 1] ? prev : 1 + Math.min(prev, d[i], d[i - 1]);
-      prev = tmp;
+const serviceEntrySchema = z.object({
+  service: z.string().describe('AWS Calculator service key, e.g. "aWSLambda" or "ec2Enhancement"'),
+  instance: z.string().optional().describe('Optional unique line-item suffix'),
+  group: z.string().optional().describe('Optional group name'),
+  config: z.record(jsonValue).describe('Config object with required region, optional description, and calculator field IDs'),
+});
+
+async function addEntries(estimate, entries) {
+  const results = [];
+  for (const entry of entries) {
+    const { service, instance, group } = entry;
+    let config = entry.config;
+    if (!service || !config) {
+      results.push({ error: 'Missing "service" or "config" in entry', entry });
+      continue;
     }
-  }
-  return d[m];
-}
-
-function suggestMatch(invalid, validIds, max = 3) {
-  const lower = invalid.toLowerCase();
-  return validIds
-    .map(id => ({ id, dist: levenshtein(lower, id.toLowerCase()) }))
-    .filter(m => m.dist <= Math.max(Math.floor(invalid.length * 0.6), 3))
-    .sort((a, b) => a.dist - b.dist)
-    .slice(0, max)
-    .map(m => m.id);
-}
-
-async function validateConfigKeys(serviceKey, config, partition) {
-  if (serviceKey.toLowerCase() === 'ec2enhancement') return null;
-
-  const configKeys = Object.keys(config).filter(k => !META_KEYS.has(k));
-  if (configKeys.length === 0) return null;
-
-  try {
-    const manifest = await loadManifest(partition || 'aws');
-    const svc = findService(manifest, serviceKey);
-    if (!svc) return null; // service not found — will fail later at export
-
-    const def = await fetchServiceDefinition(manifest, svc.key, partition || 'aws');
-    if (!def) return null;
-
-    const fields = extractInputFields(def);
-    const validIds = fields.map(f => f.id);
-    const validSet = new Set(validIds);
-    const invalid = configKeys.filter(k => !validSet.has(k));
-    if (invalid.length > 0) {
-      const lines = invalid.map(k => {
-        const suggestions = suggestMatch(k, validIds);
-        return suggestions.length
-          ? `  "${k}" — did you mean: ${suggestions.map(s => `"${s}"`).join(', ')}?`
-          : `  "${k}" — no close match found`;
-      });
-      return `Invalid field IDs for ${svc.key}:\n${lines.join('\n')}\nUse get_service_fields to discover valid field IDs.`;
-    }
-
-    // Validate selector values within columnFormIPM fields
-    const enriched = await enrichFieldsWithMetadata(def, fields);
-    const selectorErrors = [];
-    for (const field of enriched) {
-      if (field.type !== 'columnFormIPM' || !field.selectorValues) continue;
-      const configVal = config[field.id];
-      if (!configVal || !configVal.value || !Array.isArray(configVal.value)) continue;
-
-      for (const row of configVal.value) {
-        for (const [selectorId, allowedValues] of Object.entries(field.selectorValues)) {
-          if (!allowedValues || allowedValues.length === 0) continue;
-          const cell = row[selectorId];
-          if (!cell) continue;
-          const cellValue = typeof cell === 'object' && cell.value !== undefined ? cell.value : cell;
-          if (typeof cellValue !== 'string') continue;
-          if (!allowedValues.includes(cellValue)) {
-            const suggestions = suggestMatch(cellValue, allowedValues);
-            const hint = suggestions.length
-              ? ` Did you mean: ${suggestions.map(s => `"${s}"`).join(', ')}?`
-              : '';
-            selectorErrors.push(`  Field "${field.id}", selector "${selectorId}": "${cellValue}" is not valid.${hint}\n    Allowed: ${allowedValues.slice(0, 10).join(', ')}${allowedValues.length > 10 ? ` ... (${allowedValues.length} total)` : ''}`);
-          }
-        }
+    if (typeof config === 'string') {
+      try { config = JSON.parse(config); } catch {
+        results.push({ error: 'Invalid JSON in config', service });
+        continue;
       }
     }
-    if (selectorErrors.length > 0) {
-      return `Invalid selector values for ${svc.key}:\n${selectorErrors.join('\n')}`;
+    const key = instance ? `${service}:${instance}` : service;
+    const validationError = await validateServiceConfig(service, config, estimate.partition);
+    if (validationError) {
+      results.push({ error: validationError, service: key });
+      continue;
     }
-
-    return null;
-  } catch {
-    return null; // validation is best-effort; don't block on fetch failures
+    const storedKey = estimate.addService(key, config, { group });
+    results.push({ success: true, service: storedKey, group: group || '(ungrouped)' });
   }
+  return results;
+}
+
+async function validateEstimateCostForEstimate(estimate, {
+  estimate_id,
+  expected_annual_recurring,
+  tolerance_percent,
+  run_visual_check,
+}) {
+  const exportResult = await estimate.export();
+  const data = await fetchEstimate(exportResult.estimateId);
+  const validation = validateEstimateCost(data, expected_annual_recurring, tolerance_percent ?? 10);
+  const output = {
+    ...validation,
+    estimate_id,
+    aws_estimate_id: exportResult.estimateId,
+    shareable_url: exportResult.shareableUrl,
+  };
+
+  if (run_visual_check) {
+    try {
+      const { validateEstimate } = require('./validation/playwright/validate-estimate');
+      output.visual_check = await validateEstimate(
+        exportResult.shareableUrl,
+        expectedServicesForVisualCheck(data),
+        { headless: true }
+      );
+    } catch (err) {
+      output.visual_check = {
+        success: false,
+        errors: [`Visual check failed to start: ${err.message}`],
+      };
+    }
+  }
+
+  return output;
 }
 
 const pkg = require('./package.json');
@@ -118,7 +108,7 @@ server.tool(
           name: pkg.name,
           version: pkg.version,
           description: pkg.description,
-          tools: ['search_services', 'get_service_fields', 'create_estimate', 'add_service', 'export_estimate', 'import_estimate', 'get_server_info'],
+          tools: ['search_services', 'get_service_fields', 'get_service_config_schema', 'create_estimate', 'add_service', 'add_services_structured', 'export_estimate', 'validate_estimate_cost', 'import_estimate', 'get_server_info'],
           partitions: Object.keys(PARTITIONS),
         }, null, 2),
       }],
@@ -170,6 +160,65 @@ server.tool(
       const fields = extractInputFields(definition);
       const enriched = await enrichFieldsWithMetadata(definition, fields);
       results.push({ serviceCode: svc.key, serviceName: svc.name, fields: enriched });
+    }
+
+    const output = errors.length
+      ? { services: results, errors }
+      : keys.length === 1 ? results[0] : results;
+    return { content: [{ type: 'text', text: JSON.stringify(output, null, 2) }] };
+  }
+);
+
+server.tool(
+  'get_service_config_schema',
+  'Get an AI-ready configuration schema for one or more AWS services. Prefer this over get_service_fields when preparing add_services_structured input. Returns required meta fields, value shapes, valid units/options, examples, and row schemas.',
+  {
+    service: z.string().describe('One or more service keys, comma-separated (e.g. "aWSLambda, amazonS3Standard, ec2Enhancement")'),
+    partition: z.string().optional().describe('AWS partition to fetch from (default: "aws"). Valid values: "aws", "aws-iso", "aws-iso-b"'),
+  },
+  async ({ service, partition }) => {
+    const p = partition || 'aws';
+    if (!PARTITIONS[p]) {
+      return { content: [{ type: 'text', text: `Unknown partition '${p}'. Valid partitions: ${Object.keys(PARTITIONS).join(', ')}` }], isError: true };
+    }
+    const manifest = await loadManifest(p);
+    const keys = service.split(',').map(s => s.trim()).filter(Boolean);
+    const results = [];
+    const errors = [];
+
+    for (const key of keys) {
+      const svc = findService(manifest, key);
+      if (!svc) { errors.push(`Service "${key}" not found.`); continue; }
+
+      if (svc.key.toLowerCase() === 'ec2enhancement') {
+        results.push({
+          serviceCode: svc.key,
+          serviceName: svc.name,
+          configShape: {
+            region: 'required AWS region code, e.g. "us-east-1"',
+            description: 'recommended short label for this estimate line item',
+          },
+          fields: [
+            { id: 'quantity', label: 'Number of EC2 instances', type: 'numericInput', valueShape: 'string or number', example: '2' },
+            { id: 'instanceType', label: 'EC2 instance type', type: 'input', valueShape: 'string', example: 'm6i.large' },
+            { id: 'selectedOS', label: 'Operating system', type: 'dropdown', valueShape: 'string', example: 'linux', options: ['linux', 'windows', 'rhel', 'suse'] },
+            { id: 'tenancy', label: 'Tenancy', type: 'dropdown', valueShape: 'string', example: 'shared', options: ['shared', 'dedicated', 'host'] },
+            { id: 'pricingStrategy', label: 'Pricing strategy', type: 'pricingStrategy', valueShape: 'string or object', example: 'ondemand' },
+            { id: 'storageAmount', label: 'EBS storage', type: 'fileSize', valueShape: 'number or {"value":"<number>","unit":"gb|NA"}', example: { value: '30', unit: 'gb|NA' } },
+            { id: 'gp3Iops', label: 'gp3 provisioned IOPS', type: 'numericInput', valueShape: 'string or number', example: '3000' },
+            { id: 'gp3Throughput', label: 'gp3 throughput MBps', type: 'numericInput', valueShape: 'string or number', example: '125' },
+          ],
+          recommendedFlow: ['Use ec2Enhancement for EC2.', 'Do not call get_service_fields for EC2.', 'Always include region explicitly.'],
+        });
+        continue;
+      }
+
+      const definition = await fetchServiceDefinition(manifest, svc.key, p);
+      if (!definition) { errors.push(`Failed to fetch definition for "${svc.key}".`); continue; }
+
+      const fields = extractInputFields(definition);
+      const enriched = await enrichFieldsWithMetadata(definition, fields);
+      results.push(buildServiceConfigSchema(svc, enriched));
     }
 
     const output = errors.length
@@ -247,31 +296,25 @@ For batch mode, pass a JSON array in "services":
       return { content: [{ type: 'text', text: 'Invalid JSON in services parameter.' }], isError: true };
     }
 
-    const results = [];
-    for (const entry of entries) {
-      const { service, instance, group } = entry;
-      let config = entry.config;
-      if (!service || !config) {
-        results.push({ error: 'Missing "service" or "config" in entry', entry });
-        continue;
-      }
-      // Handle config passed as JSON string within the array
-      if (typeof config === 'string') {
-        try { config = JSON.parse(config); } catch {
-          results.push({ error: 'Invalid JSON in config', service });
-          continue;
-        }
-      }
-      const key = instance ? `${service}:${instance}` : service;
-      const validationError = await validateConfigKeys(service, config, estimate.partition);
-      if (validationError) {
-        results.push({ error: validationError, service: key });
-        continue;
-      }
-      estimate.addService(key, config, { group });
-      results.push({ success: true, service: key, group: group || '(ungrouped)' });
-    }
+    const results = await addEntries(estimate, entries);
     return { content: [{ type: 'text', text: JSON.stringify(results, null, 2) }] };
+  }
+);
+
+server.tool(
+  'add_services_structured',
+  'Add one or more AWS services to an estimate using structured MCP input. Prefer this over add_service because it avoids hand-serializing nested JSON. Always call get_service_config_schema first for non-EC2 services and always include config.region.',
+  {
+    estimate_id: z.string().describe('Estimate ID from create_estimate'),
+    services: z.array(serviceEntrySchema).describe('Service entries to add. Each entry includes service, optional instance/group, and config with required region.'),
+  },
+  async ({ estimate_id, services }) => {
+    const estimate = estimates.get(estimate_id);
+    if (!estimate) return { content: [{ type: 'text', text: `Estimate "${estimate_id}" not found.` }], isError: true };
+
+    const results = await addEntries(estimate, services);
+    const hasErrors = results.some(r => r.error);
+    return { content: [{ type: 'text', text: JSON.stringify(results, null, 2) }], isError: hasErrors || undefined };
   }
 );
 
@@ -288,6 +331,33 @@ server.tool(
       return { content: [{ type: 'text', text: JSON.stringify({ sharable_url: result.shareableUrl, aws_estimate_id: result.estimateId }) }] };
     } catch (err) {
       return { content: [{ type: 'text', text: `Export failed: ${err.message}` }], isError: true };
+    }
+  }
+);
+
+server.tool(
+  'validate_estimate_cost',
+  'Export an estimate, read back AWS Calculator calculated totals, and validate ARR. ARR is totalCost.monthly * 12; upfront costs are reported separately and excluded from ARR.',
+  {
+    estimate_id: z.string().describe('Estimate ID from create_estimate'),
+    expected_annual_recurring: z.number().nonnegative().describe('Expected ARR in USD. Compared against AWS totalCost.monthly * 12.'),
+    tolerance_percent: z.number().nonnegative().optional().describe('Allowed percent delta before failing validation (default: 10).'),
+    run_visual_check: z.boolean().optional().describe('Optionally open the calculator URL with Playwright and include visual validation evidence (default: false).'),
+  },
+  async ({ estimate_id, expected_annual_recurring, tolerance_percent, run_visual_check }) => {
+    const estimate = estimates.get(estimate_id);
+    if (!estimate) return { content: [{ type: 'text', text: `Estimate "${estimate_id}" not found.` }], isError: true };
+
+    try {
+      const output = await validateEstimateCostForEstimate(estimate, {
+        estimate_id,
+        expected_annual_recurring,
+        tolerance_percent,
+        run_visual_check,
+      });
+      return { content: [{ type: 'text', text: JSON.stringify(output, null, 2) }], isError: output.passed ? undefined : true };
+    } catch (err) {
+      return { content: [{ type: 'text', text: `Cost validation failed: ${err.message}` }], isError: true };
     }
   }
 );
@@ -322,7 +392,14 @@ async function main() {
   await server.connect(transport);
 }
 
-main().catch(err => {
-  console.error(err);
-  process.exit(1);
-});
+if (require.main === module) {
+  main().catch(err => {
+    console.error(err);
+    process.exit(1);
+  });
+}
+
+module.exports = {
+  addEntries,
+  validateEstimateCostForEstimate,
+};

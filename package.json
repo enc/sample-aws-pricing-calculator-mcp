@@ -6,8 +6,10 @@
   "description": "MCP server for creating, reading, updating AWS Pricing Calculator estimates through natural language.",
   "license": "MIT-0",
   "main": "mcp-server.js",
+  "packageManager": "pnpm@11.1.2",
   "scripts": {
     "test": "node --test test/*.test.js",
+    "test:integration": "RUN_INTEGRATION=1 node --test test/integration.test.js",
     "validate": "node validation/run-validation.js",
     "validate:visual": "node validation/run-validation.js --visual",
     "validate:report": "node validation/run-validation.js --report",
@@ -16,7 +18,8 @@
     "build": "esbuild mcp-server.js --bundle --platform=node --outfile=dist/mcp-server.js --format=cjs --minify && rm -f dist/aws-calculator.zip && zip dist/aws-calculator.zip mcp-server.js lib/aws-client.js lib/estimate-builder.js lib/ec2.js package.json"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.29.0"
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "zod": "^4.3.6"
   },
   "devDependencies": {
     "esbuild": "^0.27.4",

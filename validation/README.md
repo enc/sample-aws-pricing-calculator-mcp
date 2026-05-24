@@ -28,7 +28,7 @@ validation/
 
 ```bash
 # Install dependencies
-npm install
+pnpm install --frozen-lockfile
 
 # Run API-only validation (fast, no browser needed)
 node validation/run-validation.js
@@ -43,7 +43,7 @@ node validation/run-validation.js --service "Lambda"
 node validation/run-validation.js --region sa-east-1
 
 # Run with visual validation (requires playwright)
-npm install --save-dev playwright && npx playwright install chromium
+pnpm exec playwright install chromium
 node validation/run-validation.js --visual
 
 # Generate a JSON report
@@ -60,12 +60,12 @@ node --test validation/steps/calculator_steps.js
 node --test --test-name-pattern="Lambda" validation/steps/calculator_steps.js
 ```
 
-## npm Scripts
+## pnpm Scripts
 
 ```bash
-npm run validate            # API-only validation
-npm run validate:visual     # API + Playwright visual checks
-npm run validate:report     # API validation with JSON report output
+pnpm validate            # API-only validation
+pnpm validate:visual     # API + Playwright visual checks
+pnpm validate:report     # API validation with JSON report output
 ```
 
 ## Environment Variables
